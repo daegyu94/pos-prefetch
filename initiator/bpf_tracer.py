@@ -9,6 +9,7 @@ import queue
 
 from metadata import *
 from stats import *
+from config import *
 
 bpf_text_mount = """
 #include <uapi/linux/ptrace.h>
@@ -70,9 +71,10 @@ bpf_text_page_deletion = """
 struct page_deletion_event_info {
     u32 dev_id;
     u64 ino;
-    u64 pg_offset;
-    u64 mtime; // sec * 1000000000 + nanosec
+    u64 file_offset;
     u64 file_size; 
+    //u8 referenced;
+    //u8 workingset;
 };
 
 BPF_PERF_OUTPUT(page_deletion_events);
@@ -94,11 +96,21 @@ int trace_unaccount_page_cache_page(struct pt_regs *ctx, struct address_space *m
             return 0;
         }
         
+        /* XXX : referenced page goes to Ballonstasher */
+        //if (page->flags & (1UL << PG_referenced)) {
+        //    info.referenced = true;
+        //} else {
+        //    info.referenced = false;
+        //} 
+        //if (page->flags & (1UL << PG_workingset)) {
+        //    info.workingset = true;
+        //} else {
+        //    info.workingset = false;
+        //}
+
         info.dev_id = dev_id; 
         info.ino = inode->i_ino;
-        info.pg_offset = page->index << PAGE_SHIFT;
-        info.mtime = inode->i_mtime.tv_sec * 1000000000 + 
-            inode->i_mtime.tv_nsec; 
+        info.file_offset = page->index << PAGE_SHIFT;
         info.file_size = inode->i_size; 
         page_deletion_events.perf_submit(ctx, &info, sizeof(info));
     }
@@ -322,10 +334,12 @@ class CallbackMount:
         else:
             self.meta_dict.delete(dev_id)
 
-# TODO: mtime and file size check
+
 class CallbackPageDeletion:
     def __init__(self, event_queue):
         self._event_queue = event_queue
+        self._msg_list = []
+        self._num_msgs = 0
 
     def lost_cb(self, count):
         Stats.lost_page_deletion += 1
@@ -333,13 +347,35 @@ class CallbackPageDeletion:
 
     def callback(self, cpu, data, size):
         event = bpf["page_deletion_events"].event(data)
-        #print(f"page_deletion: {event.ino} {event.pg_offset}")
-        try:
-            self._event_queue.put(PageDeletionInfo(event.dev_id, event.ino, 
-                event.pg_offset, event.mtime, event.file_size), block=False)
-            Stats.page_deletion += 1
-        except queue.Full:
-            pass
+        #print(f"page_deletion: {event.ino} {event.file_offset}")
+        
+        #if event.referenced:
+        #    Stats.page_deletion_referenced += 1
+        #else:
+        #    Stats.page_deletion_unreferenced += 1
+        #if event.workingset:
+        #    Stats.page_deletion_workingset += 1
+        #else:
+        #    Stats.page_deletion_not_workingset += 1
+
+        msg = PageDeletionInfo(event.dev_id, event.ino, event.file_offset, 
+                event.file_size) 
+
+        self._msg_list.append(msg)
+        self._num_msgs += 1
+        
+        """ XXX: need some method to filter random offset """
+
+        if self._num_msgs == ConstConfig.MAX_EBPF_NUM_MSGS:
+            try:
+                self._event_queue.put(self._msg_list, block=False)
+                Stats.page_deletion += ConstConfig.MAX_EBPF_NUM_MSGS
+            except queue.Full:
+                Stats.lost_queue_full_page_deletion += ConstConfig.MAX_EBPF_NUM_MSGS
+                pass
+
+            self._msg_list = []
+            self._num_msgs = 0
 
 # enum style
 class EventType(object):
@@ -427,13 +463,13 @@ class BPFTracer(threading.Thread):
         callback_page_deletion = CallbackPageDeletion(self._event_queue)
         bpf["page_deletion_events"].open_perf_buffer(
                 callback_page_deletion.callback, 
-                page_cnt=4096, 
+                page_cnt=ConstConfig.PAGE_DELETION_PAGE_CNT,
                 lost_cb=callback_page_deletion.lost_cb)
 
         callback_open_close = CallbackOpenClose(self._fpath_dict)
         bpf["open_events"].open_perf_buffer(
                 callback_open_close.callback, 
-                page_cnt=128, 
+                page_cnt=64, 
                 lost_cb=callback_open_close.lost_cb)
        
         while True:

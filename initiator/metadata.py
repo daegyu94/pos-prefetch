@@ -4,14 +4,16 @@ import re
 
 logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO)
 
+
 class PageDeletionInfo:
-    def __init__(self, dev_id, ino, lba, mtime, file_size):
+    def __init__(self, dev_id, ino, file_offset, file_size):
         self.dev_id = dev_id
         self.ino = ino
-        self.lba = lba
-        self.mtime = mtime
+        self.file_offset = file_offset
         self.file_size = file_size
-
+    
+    def __repr__(self):
+        return f"({self.dev_id}, {self.ino}, {self.file_offset}, {self.file_size}))"
 
 ## helper functions
 def get_subsystem_id(subsysnqn):

@@ -23,6 +23,8 @@ parser.add_argument('-t', '--timer', default=False,
     help="timer")
 parser.add_argument('-d', "--debug", action="store_true",
     help="debug program")
+parser.add_argument('-s', "--steering", default=False,
+    help="steering pages within extent size distance")
 
 args = parser.parse_args()
 
@@ -33,14 +35,13 @@ from grpc_handler import *
 
 timer_stat._timer_on = args.timer
 
-
 meta_dict = Metadata()
 fpath_dict = defaultdict(lambda: (0, "")) # (path_type, str)
 stats_monitor = threading.Thread(target=run_stats_monitor, name="StatsMonitor")
 stats_monitor.daemon = True
 translator = Translator(meta_dict, fpath_dict)
 translator.daemon = True
-grpc_handler = gRPCHandler(meta_dict, translator, args.addr, args.port)
+grpc_handler = gRPCHandler(meta_dict, translator, args.addr, args.port, int(args.steering))
 grpc_handler.daemon = True
 bpf_tracer = BPFTracer(grpc_handler.get_queue(), meta_dict, fpath_dict)
 bpf_tracer.daemon = True
@@ -72,7 +73,7 @@ def signal_handler(signal, frame):
     sys.exit(0)
 
 def set_niceness():
-    niceness = 10 # bigger is more nice to yield cpu to other process
+    niceness = ConstConfig.NICE_VALUE # bigger is more nice to yield cpu to other process
     os.nice(niceness)
     new_niceness = os.nice(0)
     pid = os.getpid()
@@ -82,7 +83,7 @@ def set_niceness():
 if __name__ == "__main__":
     signal.signal(signal.SIGINT, signal_handler)
     
-    #set_niceness()
+    set_niceness() # make as bg thread to yield CPU for fg application
     
     init()
     

@@ -11,9 +11,10 @@ import time
 from metadata import *
 from translator import *
 from stats import *
+from steering import *
+from config import *
 
-#MAX_NUM_MSGS = 256 # for test (per 1MB)
-MAX_NUM_MSGS = 8192 # 64KB (16B x 4096)
+steering_on = False
 
 # TODO: process buffered msg with timeout
 class PrefetchClient:
@@ -41,7 +42,7 @@ class PrefetchClient:
 
         self._request.msgs.append(msg)
         self._num_msgs += 1
-        if self._num_msgs == MAX_NUM_MSGS:
+        if self._num_msgs == ConstConfig.MAX_GRPC_NUM_MSGS:
             await self.__send_msgs()
 
     async def __aenter__(self):
@@ -52,17 +53,23 @@ class PrefetchClient:
 
 
 class gRPCHandler(threading.Thread):
-    def __init__(self, meta_dict, translator, tgt_addr, tgt_port):
+    def __init__(self, meta_dict, translator, tgt_addr, tgt_port, steering):
         threading.Thread.__init__(self)
         super().__init__()
         self.name = "gRPCHandler"
-        
-        self._queue = queue.Queue(maxsize=MAX_NUM_MSGS*32)
+	        
+        self._queue = queue.Queue(maxsize = ConstConfig.MAX_GRPC_NUM_MSGS * 32)
         self._meta_dict = meta_dict
         self._translator = translator
         self._tgt_addr = tgt_addr
         self._tgt_port = tgt_port
-    
+	
+        self._steering = Steering()
+        self._steering_on = steering	
+        
+        if self._steering_on == 1:
+            print("steering is on...")
+
     def __del__(self):
         self._queue.join()
     
@@ -72,22 +79,41 @@ class gRPCHandler(threading.Thread):
     async def handle(self, tgt_addr, tgt_port):
         async with PrefetchClient(tgt_addr, tgt_port) as client:
             while True:
-                info = self._queue.get()
+                msg_list = self._queue.get()
+
+                if self._steering_on == 1:
+                    #print(msg_list)
+                    #prev_len = len(msg_list)
+                    steered_msg_list = self._steering.process(msg_list)
+                    #cur_len = len(steered_msg_list)
+                    #print(f"steering: {prev_len} => {cur_len}")
+                    msg_list = steered_msg_list
+
+                for info in msg_list:
+                    #print(f"info {info.ino} {info.lba}")
+                    subsys_id, ns_id = self._meta_dict.get_prefetch_meta(info.dev_id)
+                    if subsys_id is None or ns_id is None: # nvme may be umounted
+                        continue
+
+                    pba = self._translator.trans_pba(info)
+                    if pba is None: # not found in fast path
+                        Stats.trans_pba_failed += 1
+                        continue
+                    
+                    # TODO: extent size is determined by exchange metadata
+                    # only send extent aligned pba
+                    """
+                    if pba % ConstConfig.BLOCKS_PER_EXTENT:
+                        Stats.trans_pba_extent_filtered += 1
+                        continue
+                    """
+
+                    Stats.trans_pba_fast += 1
+                    Stats.qsize = self._queue.qsize()
+                    
+                    await client.send_msgs(TransInfo(subsys_id, ns_id, pba))
+
                 self._queue.task_done()
-                 
-                subsys_id, ns_id = self._meta_dict.get_prefetch_meta(info.dev_id)
-                if subsys_id is None or ns_id is None: # nvme may be umounted
-                    continue
-
-                pba = self._translator.trans_pba(info)
-                if pba is None: # not found in fast path
-                    Stats.trans_pba_slow += 1
-                    #self._translator.get_queue().put((info, self._queue))
-                    continue
-
-                Stats.trans_pba_fast += 1
-                Stats.qsize = self._queue.qsize()
-                await client.send_msgs(TransInfo(subsys_id, ns_id, pba))
 
     def run(self):
         asyncio.run(self.handle(self._tgt_addr, self._tgt_port))

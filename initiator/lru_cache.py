@@ -76,10 +76,14 @@ class LRUCache:
             """ first admission """
             if len(self.cache) >= self.capacity:
                 ev_key = self.evict()
+
             new_node = DLLNode(key, value)
             self.cache[key] = new_node
             self.linked_list.add_node(new_node)
             Stats.ext_cache_miss += 1
+
+        # TODO: remove me
+        Stats.ext_cache_size = len(self.cache)
 
         return ev_key
 
