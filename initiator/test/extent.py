@@ -1,50 +1,14 @@
-import statistics
-
-from my_types import *
-
-extent_debug_on = True
-def extent_debug(*args):
-    if extent_debug_on:
-        func_name = inspect.currentframe().f_back.f_code.co_name
-        print("[DEBUG] Extent: {}: {}".format(func_name, " ".join(map(str, args))))
-
-
 class Extent:
     def __init__(self, lba, pba, length):
         self.lba = lba
         self.pba = pba
         self.length = length
-
-        self.sum_ref_cnt = 0
         self.ref_cnts = [0] * (length >> 12)
         self.is_readaheads = [0] * (length >> 12)
-         
+    
     def __repr__(self):
-        return "(Extent: lba={}, pba={}, length={},\nref_cnts[]={},\nis_readaheads=[]={})" \
-                .format(self.lba, self.pba, self.length, 
-                self.ref_cnts, self.is_readaheads)
-
-    def get_max_ref_cnt(self):
-        return max(self.ref_cnts)
-
-    def get_stdev_ref_cnt(self):
-        if len(self.ref_cnts) >= 2:
-            return statistics.stdev(self.ref_cnts)
-        else:
-            return -1
-
-    def get_avg_ref_cnt(self):
-        return self.sum_ref_cnt / (self.length >> 12)
-        
-    def add_ref_cnt(self, i):
-        self.ref_cnts[i] += 1
-        self.sum_ref_cnt += 1
-
-    def reset_ref_cnt(self, i):
-        self.sum_ref_cnt -= self.ref_cnts[i]
-        if self.sum_ref_cnt < 0:
-            print("[ERROR] extent sum_ref_cnt={}" .format(self.sum_ref_cnt))
-        self.ref_cnts[i] = 0 
+        return "Extent: lba={}, pba={}, length={},\nref_cnts[]={},\nis_readaheads=[]={}\n" \
+                .format(self.lba, self.pba, self.length, self.ref_cnts, self.is_readaheads)
 
 def extent_hold_key(extent, pos):
     return extent.lba <= pos and pos <= (extent.lba + extent.length - 1) 

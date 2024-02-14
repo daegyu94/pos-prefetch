@@ -1,4 +1,7 @@
+import threading
+
 from stats import *
+from lock import *
 
 class DLLNode:
     def __init__(self, key, value):
@@ -42,59 +45,82 @@ class LRUCache:
         self.capacity = capacity
         self.cache = {}
         self.linked_list = DoublyLinkedList()
+        self.lock = threading.Lock()
 
     def get(self, key):
-        if key in self.cache:
-            """ move to mru """
-            node = self.cache[key]
-            self.linked_list.move_to_front(node) 
-            Stats.ext_cache_hit += 1
-            return node.value
-        else:
-            Stats.ext_cache_miss += 1
-            return None
+        with (self.lock if lock_enable else DummyLock()):
+            if key in self.cache:
+                """ move to mru """
+                node = self.cache[key]
+                self.linked_list.move_to_front(node) 
+                Stats.ext_cache_hit += 1
+                return node.value
+            else:
+                Stats.ext_cache_miss += 1
+                return None
     
     def evict(self):
-        ev_key = None
-        oldest_node = self.linked_list.get_oldest_node()
-        if oldest_node:
-            ev_key = oldest_node.key
-            del self.cache[oldest_node.key]
-            self.linked_list.remove_node(oldest_node)
-            Stats.ext_cache_evict += 1
-        return ev_key
+        with (self.lock if lock_enable else DummyLock()):
+            ev_key = None
+            oldest_node = self.linked_list.get_oldest_node()
+            if oldest_node:
+                ev_key = oldest_node.key
+                del self.cache[oldest_node.key]
+                self.linked_list.remove_node(oldest_node)
+                
+                Stats.ext_cache_evict += 1
+                Stats.ext_cache_size = len(self.cache)
+            return ev_key
 
     def put(self, key, value):
-        ev_key = None
-        if key in self.cache:
-            """ existing entry, update value """
-            node = self.cache[key]
-            node.value = value
-            self.linked_list.move_to_front(node)
-            Stats.ext_cache_hit += 1
-        else:
-            """ first admission """
-            if len(self.cache) >= self.capacity:
-                ev_key = self.evict()
+        with (self.lock if lock_enable else DummyLock()):
+            ev_key = None
+            if key in self.cache:
+                """ existing entry, update value """
+                node = self.cache[key]
+                node.value = value
+                self.linked_list.move_to_front(node)
+                Stats.ext_cache_hit += 1
+            else:
+                """ first admission """
+                if len(self.cache) >= self.capacity:
+                    ev_key = self.evict()
 
-            new_node = DLLNode(key, value)
-            self.cache[key] = new_node
-            self.linked_list.add_node(new_node)
-            Stats.ext_cache_miss += 1
+                new_node = DLLNode(key, value)
+                self.cache[key] = new_node
+                self.linked_list.add_node(new_node)
+                Stats.ext_cache_miss += 1
 
-        # TODO: remove me
-        Stats.ext_cache_size = len(self.cache)
+            # TODO: remove me
+            Stats.ext_cache_size = len(self.cache)
 
-        return ev_key
+            return ev_key
 
     def delete(self, key):
-        if key in self.cache:
-            node = self.cache[key]
-            del self.cache[node.key]
-            Stats.ext_cache_inv += 1
-            return node.value
-        return None
+        with (self.lock if lock_enable else DummyLock()):
+            if key in self.cache:
+                node = self.cache[key]
+                value = node.value
 
+                del self.cache[node.key]
+                self.linked_list.remove_node(node)
+                
+                Stats.ext_cache_delete += 1
+                Stats.ext_cache_size = len(self.cache)
+                
+                return value
+            return None
+
+    def get_all_kv(self):
+        with (self.lock if lock_enable else DummyLock()):
+            kv_list = []
+            current_node = self.linked_list.head.next
+
+            while current_node != self.linked_list.tail:
+                kv_list.append((current_node.key, current_node.value))
+                current_node = current_node.next
+
+            return kv_list
 
 if __name__ == "__main__":
     cache = LRUCache(2)

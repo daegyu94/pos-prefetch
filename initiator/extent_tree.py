@@ -1,4 +1,7 @@
+import threading
+
 from extent import *
+from lock import *
 
 class Item():
     def __init__(self, k, v = None):
@@ -60,6 +63,7 @@ class ExtentTree:
     def __init__(self, t):
         self.root = Node()
         self.t = t
+        self.lock = threading.Lock()
     
     def _inorder(self, cur):
         if cur == None: return
@@ -70,7 +74,8 @@ class ExtentTree:
             yield from self._inorder(child)
     
     def inorder(self):
-        yield from self._inorder(self.root)
+        with (self.lock if lock_enable else DummyLock()):
+            yield from self._inorder(self.root)
     
     def _preorder(self, cur):
         if cur == None: return
@@ -81,7 +86,8 @@ class ExtentTree:
     
     
     def preorder(self):
-        yield from self._preorder(self.root)
+        with (self.lock if lock_enable else DummyLock()):
+            yield from self._preorder(self.root)
         
     def _split(self, node, parnode, pos):
         # root case
@@ -153,7 +159,8 @@ class ExtentTree:
     
     
     def insert(self, item):
-        self._insert(item, self.root, None)
+        with (self.lock if lock_enable else DummyLock()):
+            self._insert(item, self.root, None)
     
     def _find(self, item, node):
         if node is None or len(node.children) == 0:
@@ -169,7 +176,8 @@ class ExtentTree:
          
          
     def find(self, item):
-        return self._find(item, self.root)
+        with (self.lock if lock_enable else DummyLock()):
+            return self._find(item, self.root)
     
     def _find_predecessor(self, item, node):
         if node.children[0] == None:
@@ -300,7 +308,8 @@ class ExtentTree:
                         assert False
         
     def delete(self, item):
-        self._delete(item, self.root)
+        with (self.lock if lock_enable else DummyLock()):
+            self._delete(item, self.root)
         
     def _find_all(self, item, node, ans):
         if node is None or len(node.children) == 0: return
@@ -338,9 +347,10 @@ class ExtentTree:
                 ans.append(node.items[i])
         
     def find_all(self, item):
-        ans = []
-        self._find_all(item, self.root, ans)
-        return ans 
+        with (self.lock if lock_enable else DummyLock()):
+            ans = []
+            self._find_all(item, self.root, ans)
+            return ans 
             
 
 def walk_test():

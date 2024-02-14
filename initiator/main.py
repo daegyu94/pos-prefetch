@@ -3,6 +3,7 @@ from collections import defaultdict
 import signal
 import sys
 import cProfile
+import queue 
 
 # arguments
 examples = """examples:
@@ -14,8 +15,7 @@ parser = argparse.ArgumentParser(
     description="Initiator caching helper",
     formatter_class=argparse.RawDescriptionHelpFormatter,
     epilog=examples)
-#parser.add_argument('-a', '--addr', default='10.0.0.58',
-parser.add_argument('-a', '--addr', default='11.0.0.58',
+parser.add_argument('-a', '--addr', default='10.0.0.56',
     help="target ip addr")
 parser.add_argument('-p', '--port', default=50051,
     help="target port")
@@ -32,20 +32,31 @@ from timer import *
 from stats import *
 from bpf_tracer import *
 from grpc_handler import *
+from user_handler import *
+from procfs import *
 
 timer_stat._timer_on = args.timer
 
 meta_dict = Metadata()
 fpath_dict = defaultdict(lambda: (0, "")) # (path_type, str)
-stats_monitor = threading.Thread(target=run_stats_monitor, name="StatsMonitor")
-stats_monitor.daemon = True
-translator = Translator(meta_dict, fpath_dict)
-translator.daemon = True
-grpc_handler = gRPCHandler(meta_dict, translator, args.addr, args.port, int(args.steering))
-grpc_handler.daemon = True
-bpf_tracer = BPFTracer(grpc_handler.get_queue(), meta_dict, fpath_dict)
+
+translator = Translator(meta_dict, fpath_dict, int(args.steering))
+grpc_handler = gRPCHandler(args.addr, args.port)
+
+event_queue = queue.Queue(maxsize = 100 * 1000)
+user_handler = UserHandler(event_queue, meta_dict, translator, grpc_handler, 
+        int(args.steering))
+user_handler.daemon = True
+bpf_tracer = BPFTracer(event_queue, meta_dict, fpath_dict)
 bpf_tracer.daemon = True
 
+stats_monitor = threading.Thread(target=run_stats_monitor, 
+        args=(translator, ), name="StatsMonitor")
+stats_monitor.daemon = True
+
+procfs_monitor = threading.Thread(target=run_procfs_monitor, 
+        args=(event_queue, ), name="ProcfsMonitor")
+procfs_monitor.daemon = True
 
 def get_current_threads():
     thread_list = threading.enumerate()
@@ -56,12 +67,13 @@ def get_current_threads():
 def init():
     print("init...")
     stats_monitor.start()
+    procfs_monitor.start()
     """
     cProfile.run('translator.start()', filename='profile/translator.data')
     cProfile.run('grpc_handler.start()', filename='profile/grpc.data')
     cProfile.run('bpf_tracer.start()', filename='profile/bpf.data')
     """
-    grpc_handler.start()
+    user_handler.start()
     bpf_tracer.start()
 
 def fini():
@@ -73,7 +85,7 @@ def signal_handler(signal, frame):
     sys.exit(0)
 
 def set_niceness():
-    niceness = ConstConfig.NICE_VALUE # bigger is more nice to yield cpu to other process
+    niceness = 0 # bigger is more nice to yield cpu to other process, default=0
     os.nice(niceness)
     new_niceness = os.nice(0)
     pid = os.getpid()
@@ -87,7 +99,7 @@ if __name__ == "__main__":
     
     init()
     
-    time.sleep(1)
+    time.sleep(0.5)
 
     get_current_threads()
         
