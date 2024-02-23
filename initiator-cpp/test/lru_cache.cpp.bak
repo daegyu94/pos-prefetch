@@ -1,0 +1,65 @@
+#include "lru_cache.h"
+
+LRUCache::LRUCache(size_t size) {
+    capacity_ = size;
+}
+
+LRUCache::~LRUCache() { }
+
+void LRUCache::Put(Key_t key, Value_t value) {
+    if (map_.find(key) == map_.end()) {
+        if (cache_.size() == capacity_) {
+            Key_t victim = cache_.back().first;
+            cache_.pop_back();
+            map_.erase(victim);
+        }
+    } else {
+        cache_.erase(map_[key]);
+    }
+
+    // update reference
+    cache_.push_front(std::make_pair(key, value));
+    map_[key] = cache_.begin();
+}
+
+Value_t LRUCache::Get(Key_t key) {
+    Value_t ret = { -1UL, nullptr };
+
+    if (map_.find(key) != map_.end()) {
+        ret = map_[key]->second;
+        cache_.erase(map_[key]);
+        cache_.push_front(std::make_pair(key, ret));
+        map_[key] = cache_.begin();
+    }
+
+    return ret;
+}
+
+Value_t LRUCache::Delete(Key_t key) {
+    Value_t ret = { -1UL, nullptr };
+
+    if (map_.find(key) != map_.end()) {
+        ret = map_[key]->second;
+        cache_.erase(map_[key]);
+        map_.erase(key);
+    }
+
+    return ret;
+}
+
+void LRUCache::Display() {
+    // Iterate in the deque and print
+    // all the elements in it
+    for (auto it = cache_.begin(); it != cache_.end(); it++) {
+        std::cout << "(" << it->first.dev_id << ", " << it->first.ino << ") ";
+    }
+    std::cout << std::endl;
+}
+
+size_t LRUCache::GetCapacity() {
+    return capacity_;
+}
+
+size_t LRUCache::GetSize() {
+    return cache_.size();
+}

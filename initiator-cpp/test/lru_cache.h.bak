@@ -1,0 +1,50 @@
+#pragma once
+
+#include <list>
+#include <unordered_map>
+#include <iostream>
+
+struct Key_t {
+    uint32_t dev_id;
+    uint64_t ino;
+
+    bool operator==(const Key_t& other) const {
+        return dev_id == other.dev_id && ino == other.ino;
+    }
+};
+
+struct Value_t {
+    uint64_t file_size;
+    void *extent_tree;
+};
+
+namespace std {
+    template <>
+        struct hash<Key_t> {
+            size_t operator()(const Key_t& k) const {
+                return hash<uint32_t>()(k.dev_id) ^ hash<uint64_t>()(k.ino);
+            }
+        };
+}
+
+class LRUCache {
+private:
+    using CacheListIterator = std::list<std::pair<Key_t, Value_t>>::iterator;
+    std::unordered_map<Key_t, CacheListIterator> map_;
+    std::list<std::pair<Key_t, Value_t>> cache_;
+    size_t capacity_; 
+
+public:
+    LRUCache(size_t);
+    ~LRUCache();
+
+    void Put(Key_t, Value_t);
+    Value_t Get(Key_t);
+    Value_t Delete(Key_t);
+
+    void Display();
+
+    size_t GetCapacity();
+
+    size_t GetSize();
+};

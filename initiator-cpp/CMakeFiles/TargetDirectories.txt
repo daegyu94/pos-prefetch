@@ -1,0 +1,4 @@
+/scratch/daegyu/pos-prefetch/initiator-cpp/CMakeFiles/proto_compile.dir
+/scratch/daegyu/pos-prefetch/initiator-cpp/CMakeFiles/pos_prefetch.out.dir
+/scratch/daegyu/pos-prefetch/initiator-cpp/CMakeFiles/edit_cache.dir
+/scratch/daegyu/pos-prefetch/initiator-cpp/CMakeFiles/rebuild_cache.dir

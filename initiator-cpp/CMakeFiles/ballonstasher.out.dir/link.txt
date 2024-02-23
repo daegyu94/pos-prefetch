@@ -1,0 +1,1 @@
+/usr/bin/c++ -O3 -DNDEBUG CMakeFiles/ballonstasher.out.dir/main.cpp.o CMakeFiles/ballonstasher.out.dir/socket.cpp.o CMakeFiles/ballonstasher.out.dir/event_handler.cpp.o -o bin/ballonstasher.out  -lpthread -ljemalloc /usr/lib/x86_64-linux-gnu/libgflags.so.2.2.1 -lpthread 
