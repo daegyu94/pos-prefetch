@@ -1,5 +1,5 @@
-initiator-cpp/build
-initiator-cpp/CMakeFiles
+initiator-cpp/build/*
+initiator-cpp/CMakeFiles/*
 initiator-cpp/cmake_install.cmake
 initiator-cpp/tags
 initiator-cpp/*.out
