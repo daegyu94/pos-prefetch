@@ -14,7 +14,7 @@ Monitor::Monitor(EventQueue &event_queue, Translator &translator) :
 
     _stat_thd = std::thread(&Monitor::RunStat, this);
 
-    _procfs_thd = std::thread(&Monitor::RunProcfs, this);
+    //_procfs_thd = std::thread(&Monitor::RunProcfs, this);
 }
 
 Monitor::~Monitor() {
@@ -27,7 +27,7 @@ Monitor::~Monitor() {
 }
 
 void Monitor::WriteCounter(void) {                        
-    std::ofstream outfile("log.counter");
+    std::ofstream outfile("/var/log/ebpf_counter.log");
 	if (!outfile.is_open()) {
         std::cerr << "Error: Unable to open file for writing." << "\n";
         return;
@@ -57,6 +57,24 @@ void Monitor::WriteCounter(void) {
         << ",\nbpf_lost_open: " << counter.bpf_lost_open             
         << ", bpf_lost_page_access: " << counter.bpf_lost_page_access
         << ", bpf_lost_readpages: " << counter.bpf_lost_readpages   
+        << "\n";
+    
+    /* Latency breakdown */
+    double lat_eh = GetTotalProcessedEvents() ? 
+        1.0 * (br.elapseds[BR_EH_ENQ] + br.elapseds[BR_EH_DEQ]) / 
+        GetTotalProcessedEvents() / 1e3 : 0.0;
+    double lat_req_align = counter.request_alignment ? 
+        1.0 * br.elapseds[BR_REQ_ALIGN] / counter.request_alignment / 1e3 : 0.0;
+    double lat_ext_cache = counter.extent_cache ? 
+        1.0 * br.elapseds[BR_EXT_CACHE] / counter.extent_cache / 1e3 : 0.0;
+    double lat_rpc = counter.grpc_num_send_msgs ? 
+        1.0 * br.elapseds[BR_RPC] / counter.grpc_num_send_msgs / 1e3 : 0.0;
+    
+    outfile << "[Latency breakdown (us)]"
+        << "\nevent handler: " << lat_eh 
+        << "\nrequest alignment: " << lat_req_align
+        << "\nextent cache: " << lat_ext_cache
+        << "\nRPC: " << lat_rpc
         << "\n";
 
     outfile.close();                                                    

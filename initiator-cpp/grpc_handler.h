@@ -56,4 +56,7 @@ private:
     CompletionQueue _cq;
 
     std::thread _thd;
+    
+    prefetch::PrefetchRequest requests_;
+    int num_msgs_ = 0;
 };

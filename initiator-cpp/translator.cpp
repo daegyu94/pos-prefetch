@@ -5,6 +5,8 @@
 #include "extent.h"
 #include "fiemap.h"
 #include "btree.h"
+#include "config.h"
+#include "stat.h"
 
 #define DMFP_TRANS_INFO
 #ifdef DMFP_TRANS_INFO
@@ -23,7 +25,7 @@
 #endif
 
 
-#define MAX_EXTENT_CACHE_SIZE (1 * 1024 * 1024)
+#define MAX_EXTENT_CACHE_SIZE (128 * (1 << 10))
 #define BTREE_DEGREE 3
 
 Translator::Translator(GRPCHandler &grpc_handler) : 
@@ -59,8 +61,15 @@ ExtentTree *Translator::BuildTree(DevIdInoPair &pair) {
 
 ExtentTree *Translator::CreateOrGetExtentTree(DevIdInoPair &pair, uint64_t file_size) {
     auto key = pair;
-    auto value = _lru_cache.Get(key);
-    ExtentTree *extent_tree = (ExtentTree *) value.second;
+    LRUCacheValueType value = { -1UL, nullptr };
+    ExtentTree *extent_tree;
+
+    if (config.extent_cache) {
+        value = _lru_cache.Get(key);
+        //dmfp_trans_info("key (%u, %lu), value (%lu, %p), file_size=%lu\n", 
+        //        key.first, key.second, value.first, value.second, file_size);
+    }
+    extent_tree = (ExtentTree *) value.second;
 
 #ifdef DMFP_EXTENT_MONITORING
     std::lock_guard<std::mutex> lock_guard(_mtx); 
@@ -71,8 +80,11 @@ ExtentTree *Translator::CreateOrGetExtentTree(DevIdInoPair &pair, uint64_t file_
         if (extent_tree) {
             auto key = pair;
             auto value = std::make_pair(file_size, extent_tree);
-
-            auto ev_key = _lru_cache.Put(key, value);
+            
+            LRUCacheKeyType ev_key = { -1, -1UL };
+            if (config.extent_cache) {
+                ev_key = _lru_cache.Put(key, value);
+            }
             if (ev_key.first != -1) {
                 filepath_map.Delete(ev_key);
             }
@@ -80,7 +92,11 @@ ExtentTree *Translator::CreateOrGetExtentTree(DevIdInoPair &pair, uint64_t file_
     } else {
         if (value.first != file_size) {
             auto key = pair;
-            auto ret = _lru_cache.Delete(key);
+            LRUCacheValueType ret = { -1UL, nullptr };
+
+            if (config.extent_cache) {
+                ret = _lru_cache.Delete(key);
+            }
             
             ExtentTree *ret_extent_tree = (ExtentTree *) ret.second;
             if (ret_extent_tree != nullptr) {
@@ -88,7 +104,7 @@ ExtentTree *Translator::CreateOrGetExtentTree(DevIdInoPair &pair, uint64_t file_
             }
 
             extent_tree = BuildTree(pair);
-            if (extent_tree) {
+            if (extent_tree && config.extent_cache) {
                 auto ev_key = _lru_cache.Put(pair, 
                         std::make_pair(file_size, extent_tree));
                 if (ev_key.first != -1) {
@@ -104,7 +120,6 @@ ExtentTree *Translator::CreateOrGetExtentTree(DevIdInoPair &pair, uint64_t file_
 }
 
 #define MAX_BUFFER_MSGS 16
-bool steering_on = false;
 bool evaluating_readahead = false;
 bool evaluating_reference = false;
 bool evaluating_extent = evaluating_readahead || evaluating_reference;
@@ -112,6 +127,8 @@ bool evaluating_extent = evaluating_readahead || evaluating_reference;
 void Translator::ProcessPageDeletion(BPFEvent *event) {
     PageDeletionEvent ev = { event->dev_id, event->ino, event->index, 
         event->file_size };
+    br_declare_ts(all);
+
     dmfp_trans_debug("dev_id=%u, ino=%lu, index=%lu\n", 
             ev.dev_id, ev.ino, ev.index);
     
@@ -120,11 +137,18 @@ void Translator::ProcessPageDeletion(BPFEvent *event) {
         return;
     }
 
-    if (steering_on) {
-        _event_vec = steering.Process(_event_vec);    
+    if (config.extent_aligned_dispatch) {
+        br_declare_ts(all2);
+
+        br_start_ts(all2);
+        _event_vec = steering.Process(_event_vec);
+        br_end_ts(all2, BR_REQ_ALIGN);
+        counter.request_alignment++;
     }
     
     for (auto &ev : _event_vec) {
+        br_start_ts(all);
+        
         DevIdInoPair pair = std::make_pair(ev.dev_id, ev.ino); 
         ExtentTree *extent_tree = 
             CreateOrGetExtentTree(pair, ev.file_size);
@@ -135,13 +159,15 @@ void Translator::ProcessPageDeletion(BPFEvent *event) {
             if (!ret_ext) {
                 continue; 
             }
-            
+            br_end_ts(all, BR_EXT_CACHE);
+            counter.extent_cache++;
+
             ret_ext->ClearRefCnt(ev.index);
             //ret_ext->Show();
 
             uint32_t subsys_id, ns_id;
             std::tie(subsys_id, ns_id) = mntpnt_map.Get2(ev.dev_id);
-            if (steering_on && evaluating_extent) {
+            if (config.extent_aligned_dispatch && evaluating_extent) {
                 /* (start_index, num_pages)*/
                 std::vector<std::pair<uint64_t, uint32_t>> vec = 
                     evaluateExtent(ext, ev.index, evaluating_readahead, evaluating_reference);
@@ -161,11 +187,16 @@ void Translator::ProcessPageDeletion(BPFEvent *event) {
                 RpcMessage msg = { subsys_id, ns_id, pba, length };
                 _grpc_handler.Process(msg);
             }
+
+            if (!config.extent_cache) {
+                btree_free(extent_tree);
+            }
         } else {
             // cannot found file info
         }
     }
     _event_vec.clear();
+    _event_vec.shrink_to_fit();
 }
 
 void Translator::ProcessPageReference(BPFEvent *event) {
@@ -215,10 +246,13 @@ void Translator::ProcessUnlink(BPFEvent *event) {
 #ifdef DMFP_EXTENT_MONITORING
     std::lock_guard<std::mutex> lock_guard(_mtx); 
 #endif
-    ExtentTree *ret_extent_tree = (ExtentTree *) _lru_cache.Delete(key).second;
-    if (ret_extent_tree) {
-        btree_free(ret_extent_tree);
+    if (config.extent_cache) {
+        ExtentTree *ret_extent_tree = (ExtentTree *) _lru_cache.Delete(key).second;
+        if (ret_extent_tree) {
+            btree_free(ret_extent_tree);
+        }
     }
+    filepath_map.Delete(key);
 }
 
 
@@ -226,5 +260,7 @@ void Translator::GetExtentTrees(std::vector<LRUCacheValueType> &vec)  {
 #ifdef DMFP_EXTENT_MONITORING
     std::lock_guard<std::mutex> lock_guard(_mtx); 
 #endif
-    _lru_cache.Gets(vec);
+    if (config.extent_cache) {
+        _lru_cache.Gets(vec);
+    }
 }

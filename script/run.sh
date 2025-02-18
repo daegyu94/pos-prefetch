@@ -1,0 +1,20 @@
+#!/bin/bash
+
+bin="./pos_prefetch.out"
+
+#hostname=$(hostname)
+#log_file="${hostname}_program.log"
+#> $log_file  # clear
+
+cd ../initiator-cpp/build
+sudo $bin -extent_cache 1 -extent_aligned_dispatch 1 > /dev/null &
+
+#while true; do
+#  sudo $bin -extent_cache 1 -extent_aligned_dispatch 1 > /dev/null &
+#
+#  exit_code=$?
+#  if [ "$exit_code" -ne 1 ]; then
+#    break
+#  fi
+#  sleep 1
+#done

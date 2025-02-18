@@ -1,7 +1,8 @@
 #pragma once
 
 #include <stdint.h>
-#include <thread>
+
+//#define LATENCY_BREAKDOWN
 
 struct StatCounter {
     uint64_t grpc_num_send_msgs;
@@ -37,6 +38,83 @@ struct StatCounter {
     uint64_t bpf_lost_open;
     uint64_t bpf_lost_page_access;
     uint64_t bpf_lost_readpages;
+    
+    uint64_t extent_cache;
+    uint64_t request_alignment;
 };
 
 extern StatCounter counter;
+
+static inline uint64_t GetTotalProcessedEvents() {
+    return counter.event_page_deletion + \
+        counter.event_page_referenced + \
+        counter.event_vfs_unlink + \
+        counter.event_readpages + \
+        counter.event_cleancache_repl;
+}
+
+
+enum {
+    BR_EH_ENQ, 
+    BR_EH_DEQ, 
+    BR_REQ_ALIGN, 
+    BR_EXT_CACHE, 
+    BR_RPC, 
+
+    BR_MAX,
+};
+
+struct LatencyBreakdown {
+    uint64_t elapseds[BR_MAX];
+};
+
+extern struct LatencyBreakdown br;
+extern const char *br_names[];
+
+static inline uint64_t elapsed_us(int name)
+{
+    return br.elapseds[name] / 1000;
+}
+
+static inline double elapsed_avg_us(int name, uint64_t cnt)
+{
+    if (cnt == 0) {
+        return 0.0;
+    } else{
+        return (double) br.elapseds[name] / 1000 / cnt;
+    }
+}
+
+#ifdef LATENCY_BREAKDOWN
+
+#define _(x)                    br_time_##x
+#define br_declare_ts(x)        struct timespec _(x) = {0, 0}
+#define br_start_ts(x)          clock_gettime(CLOCK_MONOTONIC, &_(x))
+#define br_end_ts(x, name)      do {                                \
+    struct timespec end = {0, 0};                                   \
+    clock_gettime(CLOCK_MONOTONIC, &end);                           \
+    br.elapseds[name] +=								            \
+    (end.tv_sec - _(x).tv_sec) * (size_t) 1e9 +                     \
+    (end.tv_nsec - _(x).tv_nsec);                                   \
+} while (0)
+#define br_end_ts_with_lat(x, name, lat)      do {                  \
+    struct timespec end = {0, 0};                                   \
+    clock_gettime(CLOCK_MONOTONIC, &end);                           \
+    br.elapseds[name] += lat +								        \
+    (end.tv_sec - _(x).tv_sec) * (size_t) 1e9 +                     \
+    (end.tv_nsec - _(x).tv_nsec);                                   \
+} while (0)
+
+#define br_add_lat(name, lat)      do {                             \
+    br.elapseds[name] += lat;								        \
+} while (0)
+
+#else
+
+#define br_declare_ts(x)              do {} while (0)
+#define br_start_ts(x)                do {} while (0)
+#define br_end_ts(name, x)            do {} while (0)
+#define br_end_ts_with_lat(name, x)   do {} while (0)
+#define br_add_lat(name, lat)         do {} while (0)
+
+#endif

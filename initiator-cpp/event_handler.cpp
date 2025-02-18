@@ -79,10 +79,13 @@ void EventHandler::ProcessEvent(void *item) {
 
 void EventHandler::HandleEvents() {
     dmfp_eh_info("\n");
-    
+    br_declare_ts(all);
+
     while (is_running) {
+        br_start_ts(all);
         void *item = _event_queue.Dequeue();
         if (item != nullptr) {
+            br_end_ts(all, BR_EH_DEQ);
             ProcessEvent(item);
         }
     }

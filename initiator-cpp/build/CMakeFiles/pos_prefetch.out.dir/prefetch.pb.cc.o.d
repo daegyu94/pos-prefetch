@@ -1,7 +1,7 @@
 CMakeFiles/pos_prefetch.out.dir/prefetch.pb.cc.o: \
- /scratch/daegyu/pos-prefetch/initiator-cpp/build/prefetch.pb.cc \
+ /home/daegyu/prefetch-cache/ebpf-tracer/initiator-cpp/build/prefetch.pb.cc \
  /usr/include/stdc-predef.h \
- /scratch/daegyu/pos-prefetch/initiator-cpp/build/prefetch.pb.h \
+ /home/daegyu/prefetch-cache/ebpf-tracer/initiator-cpp/build/prefetch.pb.h \
  /usr/include/c++/7/limits \
  /usr/include/x86_64-linux-gnu/c++/7/bits/c++config.h \
  /usr/include/x86_64-linux-gnu/c++/7/bits/os_defines.h \

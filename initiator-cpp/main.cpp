@@ -11,32 +11,37 @@
 
 using namespace std;
 
-DEFINE_uint32(server_port, 50000, "tcp port for connection");
+DEFINE_string(addr, "10.0.50.8", "tcp addr for connection");
+DEFINE_string(port, "50051", "tcp port for connection");
+DEFINE_int32(extent_cache, 1, "Enable or disable extent cache");
+DEFINE_int32(extent_aligned_dispatch, 1, "Enable or disable extent-aligned dispatch");
 
 struct config_t config;
+
 void set_default_config() {
-    config.server_port = FLAGS_server_port;
+    config.addr = FLAGS_addr;
+    config.port = FLAGS_port;
+    config.extent_cache = FLAGS_extent_cache;
+    config.extent_aligned_dispatch = FLAGS_extent_aligned_dispatch;
 }
 
 void print_config() {
     printf("------------------- Config -------------------\n");
-    printf("tcp_port=%d\n", 
-            config.server_port);
+    printf("addr=%s, port=%s\n", config.addr.c_str(), config.port.c_str());
+    printf("extent_cache=%d\n", config.extent_cache);
+    printf("extent_aligned_dispatch=%d\n", config.extent_aligned_dispatch);
     printf("----------------------------------------------\n");
 }
 
 /* grpc_handler, metadata(map) is global extern variable */
 int initialize() {
-    std::string addr = "10.0.0.56";
-    std::string port = "50001";
-
     std::vector<uint32_t> dev_ids = mntpnt_map.GetDevIds();
     if (dev_ids.size() == 0) {
         printf("[ERROR] The target nvme device is not mounted\n");
         return -1;
     }
 
-    GRPCHandler grpc_handler(addr, port);
+    GRPCHandler grpc_handler(config.addr, config.port);
     
     Translator translator(grpc_handler);
 

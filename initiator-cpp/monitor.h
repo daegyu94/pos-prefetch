@@ -3,7 +3,7 @@
 #include "translator.h"
 #include "event_queue.h"
 
-#define DMFP_EXTENT_MONITORING 
+//#define DMFP_EXTENT_MONITORING 
 
 class Monitor {
 public:

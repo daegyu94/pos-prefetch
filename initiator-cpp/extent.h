@@ -280,7 +280,7 @@ static inline bool extent_iter(const void *a, void *udata) {
     return true;
 }
 
-
+#if 0
 /* TODO: */
 static inline 
 std::vector<std::pair<uint64_t, int>> evaluateExtentReadahead(Extent &extent, uint64_t index) {
@@ -291,6 +291,7 @@ static inline
 std::vector<std::pair<uint64_t, int>> evaluateExtentRefCnt(Extent &extent, uint64_t index) {
 
 }
+#endif 
 
 /* evaluate readahead and avg ref cnts */
 static inline std::vector<std::pair<uint64_t, uint32_t>>

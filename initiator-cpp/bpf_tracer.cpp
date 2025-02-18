@@ -462,9 +462,12 @@ void BPFTracer::HandleOpenEvents(void *cb_cookie, void *data, int data_size) {
 
 /* allocate new object and free when dequeue */
 void BPFTracer::HandlePageAccessEvents(void *cb_cookie, void *data, int data_size) {
+    br_declare_ts(all);
+
+    br_start_ts(all);
     auto ev = static_cast<BPFEvent *>(data);
     BPFEvent *event = new BPFEvent;
-
+    
     memcpy(event, ev, sizeof(BPFEvent));
     
     dmfp_bpf_debug("dev_id=%u, ino=%lu, index=%lu, file_size=%lu, "
@@ -473,6 +476,7 @@ void BPFTracer::HandlePageAccessEvents(void *cb_cookie, void *data, int data_siz
             event->readahead_bitmap, event->readahead_size, event->type);
  
     _event_queue->Enqueue((void *) event);
+    br_end_ts(all, BR_EH_ENQ);
 }
 
 void BPFTracer::HandleLostOpenEvents(void *cb_cookie, uint64_t lost) {
@@ -490,10 +494,14 @@ void BPFTracer::HandleLostReadpagesEvents(void *cb_cookie, uint64_t lost) {
 BPFTracer::BPFTracer() {
     std::string BPF_PROGRAM = bpf_open_close + \
                               bpf_page_deletion + \
-                              bpf_mark_page_accessed + \
-                              bpf_ext4_mpage_readpages + \
                               bpf_vfs_unlink;
-
+    /*
+    std::string BPF_PROGRAM = bpf_open_close + \
+                              bpf_page_deletion + \
+                              bpf_vfs_unlink + \
+                              bpf_mark_page_accessed + \
+                              bpf_ext4_mpage_readpages;
+    */
     dmfp_bpf_info("\n");
     
     auto init_res = _bpf.init(BPF_PROGRAM);
@@ -545,19 +553,22 @@ BPFTracer::BPFTracer() {
         std::cerr << attach_res.msg() << std::endl;
         return;
     }
-
+#if 0
     attach_res = _bpf.attach_kprobe("mark_page_accessed", 
             "trace_mark_page_accessed", 0, BPF_PROBE_ENTRY, 0);
     if (!attach_res.ok()) {
         std::cerr << attach_res.msg() << std::endl;
         return;
     }
+#endif
+#if 0
     attach_res = _bpf.attach_kprobe("ext4_mpage_readpages", 
             "trace_ext4_mpage_readpages", 0, BPF_PROBE_ENTRY, 0);
     if (!attach_res.ok()) {
         std::cerr << attach_res.msg() << std::endl;
         return;
     }
+#endif
     attach_res = _bpf.attach_kprobe("vfs_unlink", 
             "trace_vfs_unlink", 0, BPF_PROBE_ENTRY, 0);
     if (!attach_res.ok()) {
