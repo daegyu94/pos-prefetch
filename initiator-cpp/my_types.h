@@ -26,20 +26,22 @@ struct BPFEvent {
     uint64_t ino;
     uint64_t index;
     uint64_t file_size;
-    uint32_t readahead_bitmap;
+    uint32_t bitmap;
     uint16_t readahead_size;
+    uint64_t len;
+    int advice;
 
     BPFEvent() {}
 
     BPFEvent(uint16_t type, uint32_t dev_id, uint64_t ino, uint64_t index, 
             uint64_t file_size, 
-            uint32_t readahead_bitmap = 0, uint16_t readahead_size = 0) {
+            uint32_t bitmap = 0, uint16_t readahead_size = 0) {
         this->type = type;
         this->dev_id = dev_id;
         this->ino = ino;
         this->index = index;
         this->file_size = file_size;
-        this->readahead_bitmap = readahead_bitmap;
+        this->bitmap = bitmap;
         this->readahead_size = readahead_size;
     } 
 };
@@ -59,6 +61,8 @@ enum event_type {
     EVENT_PAGE_REFERENCED,
     EVENT_EXT4_MPAGE_READPAGES,
     EVENT_VFS_UNLINK,
+    EVENT_VFS_FADVISE,
+
     EVENT_CLEANCACHE_REPL,
 };
 

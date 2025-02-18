@@ -32,6 +32,7 @@ struct StatCounter {
     uint64_t event_page_deletion;
     uint64_t event_page_referenced;
     uint64_t event_vfs_unlink;
+    uint64_t event_vfs_fadvise;
     uint64_t event_readpages;
     uint64_t event_cleancache_repl;
     
@@ -41,6 +42,8 @@ struct StatCounter {
     
     uint64_t extent_cache;
     uint64_t request_alignment;
+    
+    uint64_t bypassed_by_fadvise;
 };
 
 extern StatCounter counter;

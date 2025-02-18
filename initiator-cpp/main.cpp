@@ -15,6 +15,7 @@ DEFINE_string(addr, "10.0.50.8", "tcp addr for connection");
 DEFINE_string(port, "50051", "tcp port for connection");
 DEFINE_int32(extent_cache, 1, "Enable or disable extent cache");
 DEFINE_int32(extent_aligned_dispatch, 1, "Enable or disable extent-aligned dispatch");
+DEFINE_int32(trace_fadvise, 1, "Enable or disable fadvise tracing");
 
 struct config_t config;
 
@@ -23,6 +24,7 @@ void set_default_config() {
     config.port = FLAGS_port;
     config.extent_cache = FLAGS_extent_cache;
     config.extent_aligned_dispatch = FLAGS_extent_aligned_dispatch;
+    config.trace_fadvise = FLAGS_trace_fadvise;
 }
 
 void print_config() {
@@ -30,6 +32,7 @@ void print_config() {
     printf("addr=%s, port=%s\n", config.addr.c_str(), config.port.c_str());
     printf("extent_cache=%d\n", config.extent_cache);
     printf("extent_aligned_dispatch=%d\n", config.extent_aligned_dispatch);
+    printf("trace_fadvise=%d\n", config.trace_fadvise);
     printf("----------------------------------------------\n");
 }
 

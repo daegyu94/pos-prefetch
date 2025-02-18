@@ -1,4 +1,5 @@
 #include <ctime>
+#include <fcntl.h>
 
 #include "translator.h"
 #include "metadata.h"
@@ -161,8 +162,14 @@ void Translator::ProcessPageDeletion(BPFEvent *event) {
             }
             br_end_ts(all, BR_EXT_CACHE);
             counter.extent_cache++;
-
-            ret_ext->ClearRefCnt(ev.index);
+            
+            if (config.trace_fadvise) {
+                /* bypass unimportant page */
+                ret_ext->ClearBitmap(ev.index);
+                counter.bypassed_by_fadvise++;
+                continue;
+            }
+            //ret_ext->ClearRefCnt(ev.index);
             //ret_ext->Show();
 
             uint32_t subsys_id, ns_id;
@@ -236,7 +243,7 @@ void Translator::ProcessReadpages(BPFEvent *event) {
         }
 
         ret_ext->ClearRefCnt(next_index);
-        ret_ext->SetReadaheadBitmap(next_index);
+        ret_ext->SetBitmap(next_index);
         //ret_ext->Show();
     } 
 }
@@ -255,6 +262,38 @@ void Translator::ProcessUnlink(BPFEvent *event) {
     filepath_map.Delete(key);
 }
 
+void Translator::ProcessFadvise(BPFEvent *event) {
+    DevIdInoPair pair = std::make_pair(event->dev_id, event->ino); 
+    ExtentTree *extent_tree = CreateOrGetExtentTree(pair, event->file_size);
+    uint64_t start_index = event->index; 
+    uint64_t len = event->len;
+    int advice = event->advice;
+
+    if (advice == POSIX_FADV_DONTNEED || advice == POSIX_FADV_NOREUSE || 
+            advice == POSIX_FADV_SEQUENTIAL) {
+        /* 
+         * TODO: mark extent as bypass, this state will be cleared in page eviction 
+         * sequential access pattern may pollute victim cache
+         */
+        Extent *ret_ext = nullptr;
+        uint64_t num_pages = (len >> PAGE_SHIFT) - start_index;
+        for (uint64_t i = 0; i < num_pages; i++) {
+            uint64_t next_index = start_index + i;
+            if (!ret_ext || !ret_ext->IsKeyInRange(next_index << PAGE_SHIFT)) {
+                Extent ext(next_index << PAGE_SHIFT);
+                ret_ext = (Extent *) *(uint64_t *) btree_get(extent_tree, &ext);
+                if (!ret_ext) {
+                    /* XXX: need? */
+                    printf("[ERROR] cannot find extent\n");
+                    continue;
+                }
+            }
+            ret_ext->SetBitmap(next_index);
+        } 
+    } else {
+        /* TODO: other hint-based filtering */
+    }
+}
 
 void Translator::GetExtentTrees(std::vector<LRUCacheValueType> &vec)  {
 #ifdef DMFP_EXTENT_MONITORING

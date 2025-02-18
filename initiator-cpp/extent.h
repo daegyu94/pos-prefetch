@@ -28,7 +28,7 @@ typedef struct Extent {
     uint64_t pba;
     uint32_t length;
 
-    uint64_t *readahead_bitmap;
+    uint64_t *bitmap;
     uint8_t *ref_cnts;
 
     uint32_t sum_refcnf;
@@ -39,15 +39,15 @@ typedef struct Extent {
         this->length = length;
 
         if (pba == -1UL) { 
-            readahead_bitmap = nullptr;
+            bitmap = nullptr;
             ref_cnts = nullptr;
         } else {
             uint32_t num_pages = length >> PAGE_SHIFT;
             uint32_t bitmap_size = num_pages / 64 + 1;
             
-            this->readahead_bitmap = new uint64_t[bitmap_size]; 
+            this->bitmap = new uint64_t[bitmap_size]; 
             this->ref_cnts = new uint8_t[num_pages];
-            memset(this->readahead_bitmap, 0x00, sizeof(uint64_t) * bitmap_size);
+            memset(this->bitmap, 0x00, sizeof(uint64_t) * bitmap_size);
             memset(this->ref_cnts, 0x00, sizeof(uint8_t) * num_pages);
         }
         sum_refcnf = 0;
@@ -57,14 +57,14 @@ typedef struct Extent {
     }
 
     ~Extent() {
-        if (readahead_bitmap) {
-            delete[] readahead_bitmap;
+        if (bitmap) {
+            delete[] bitmap;
         }
         if (ref_cnts) {
             delete[] ref_cnts;
         }
-        dmfp_extent_debug("~Extent(), delete readahead_bitmap and ref_cnts %u\n", 
-                readahead_bitmap ? 1 : 0);
+        dmfp_extent_debug("~Extent(), delete bitmap and ref_cnts %u\n", 
+                bitmap ? 1 : 0);
     }
 
     /* copy constructor */
@@ -76,11 +76,11 @@ typedef struct Extent {
         
         uint32_t num_pages = length >> PAGE_SHIFT;
         uint32_t bitmap_size = num_pages / 64 + 1;
-        if (other.readahead_bitmap) {
-            readahead_bitmap = new uint64_t[bitmap_size];
-            memcpy(readahead_bitmap, other.readahead_bitmap, bitmap_size * sizeof(uint64_t));
+        if (other.bitmap) {
+            bitmap = new uint64_t[bitmap_size];
+            memcpy(bitmap, other.bitmap, bitmap_size * sizeof(uint64_t));
         } else {
-            readahead_bitmap = nullptr;
+            bitmap = nullptr;
         }
 
         if (other.ref_cnts) {
@@ -96,20 +96,21 @@ typedef struct Extent {
     uint64_t PageIndex2ExtentIndex(uint64_t index) {
         return lba > 0 ? index % (lba >> PAGE_SHIFT) : index;
     }
-    void SetReadaheadBitmap(uint64_t index) {
+
+    void SetBitmap(uint64_t index) {
         uint64_t i = PageIndex2ExtentIndex(index);
-        readahead_bitmap[i / 64] |= (1ULL << (i % 64));
-        //printf("%s: index=%lu, i=%lu, %lu\n", __func__, index, i, readahead_bitmap[i / 64]);
+        bitmap[i / 64] |= (1ULL << (i % 64));
+        //printf("%s: index=%lu, i=%lu, %lu\n", __func__, index, i, bitmap[i / 64]);
     }
     
-    void ClearReadaheadBitmap(uint64_t index) {
+    void ClearBitmap(uint64_t index) {
         uint64_t i = PageIndex2ExtentIndex(index);
-        readahead_bitmap[i / 64] &= ~(1ULL << (i % 64)); 
+        bitmap[i / 64] &= ~(1ULL << (i % 64)); 
     }
 
-    bool TestReadaheadBitmap(uint64_t index) {
+    bool TestBitmap(uint64_t index) {
         uint64_t i = PageIndex2ExtentIndex(index);
-        return (readahead_bitmap[i / 64] & (1ULL << (i % 64)));
+        return (bitmap[i / 64] & (1ULL << (i % 64)));
     }
 
     void AddRefCnt(uint64_t index) {
@@ -141,8 +142,8 @@ typedef struct Extent {
         for (int num = 0; num < bitmap_size; num++) {
             for (int i = 0; i < 64; i++) {
                 uint64_t mask = 1UL << i;
-                //printf("i=%d, %lu, %lu\n", i, readahead_bitmap[num], readahead_bitmap[num] & mask);
-                if (readahead_bitmap[num] & mask) {
+                //printf("i=%d, %lu, %lu\n", i, bitmap[num], bitmap[num] & mask);
+                if (bitmap[num] & mask) {
                     sum++;
                 }
                 if (++cnt == num_pages) {
@@ -158,18 +159,18 @@ out:
     void Show(void) const {
         printf("lba=%lu, pba=%lu, length=%u\n", lba, pba, length);
         
-        if (readahead_bitmap == nullptr || ref_cnts == nullptr) {
+        if (bitmap == nullptr || ref_cnts == nullptr) {
             return;
         }
 
-        printf("readahead_bitmap=[] ");
+        printf("bitmap=[] ");
         
         uint32_t bitmap_size = (length >> PAGE_SHIFT) / 64 + 1;
         for (int num = 0; num < bitmap_size; num++) {
             for (int i = 63; i >= 0; i--) {
                 uint64_t mask = 1UL << i;
                 //printf("i=%d, mask=%lu\n", i, mask);
-                printf("%u", (readahead_bitmap[num] & mask) ? 1 : 0);
+                printf("%u", (bitmap[num] & mask) ? 1 : 0);
 
                 if (i % 8 == 0 && i != 0) {
                     printf(" "); // Add a space every 8 bits for better readability
@@ -193,7 +194,7 @@ out:
     void Show(uint64_t ino, int extent_number, std::ofstream &outfile) {
         double avg_refcnt, readahead_ratio;
 
-        if (readahead_bitmap == nullptr || ref_cnts == nullptr) {
+        if (bitmap == nullptr || ref_cnts == nullptr) {
             avg_refcnt = 0.0;
             readahead_ratio = 0.0;
         } else {
@@ -208,13 +209,13 @@ out:
             << std::endl;
 
 #if 0 
-        outfile << "readahead_bitmap=[]" << std::endl;
+        outfile << "bitmap=[]" << std::endl;
         uint32_t num_pages = length >> PAGE_SHIFT;
         uint32_t bitmap_size = num_pages / 64 + 1;
         for (int num = 0; num < bitmap_size; num++) {
             for (int i = 63; i >= 0; i--) {
                 uint64_t mask = 1UL << i;
-                uint32_t value = (readahead_bitmap[num] & mask) ? 1 : 0;
+                uint32_t value = (bitmap[num] & mask) ? 1 : 0;
                 outfile << value;
 
                 if (i % 8 == 0 && i != 0) {

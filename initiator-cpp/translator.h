@@ -29,6 +29,7 @@ class Translator {
         void ProcessPageReference(BPFEvent *event);
         void ProcessReadpages(BPFEvent *event);
         void ProcessUnlink(BPFEvent *event);
+        void ProcessFadvise(BPFEvent *event);
 		    
         void GetExtentTrees(std::vector<LRUCacheValueType> &);
         

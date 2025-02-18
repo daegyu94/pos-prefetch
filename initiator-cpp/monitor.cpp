@@ -52,11 +52,13 @@ void Monitor::WriteCounter(void) {
         << ", event_open_rel: " << counter.event_open_rel           
         << ", event_page_deletion: " << counter.event_page_deletion 
         << ", event_page_referenced: " << counter.event_page_referenced
-        << ", event_vfs_unlink: " << counter.event_vfs_unlink       
+        << ", event_vfs_unlink: " << counter.event_vfs_unlink
+        << ", event_vfs_fadvise: " << counter.event_vfs_fadvise
         << ", event_readpages: " << counter.event_readpages         
         << ",\nbpf_lost_open: " << counter.bpf_lost_open             
         << ", bpf_lost_page_access: " << counter.bpf_lost_page_access
         << ", bpf_lost_readpages: " << counter.bpf_lost_readpages   
+        << ",\nbypassed_by_fadvise: " << counter.bypassed_by_fadvise
         << "\n";
     
     /* Latency breakdown */

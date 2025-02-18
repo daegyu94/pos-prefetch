@@ -64,6 +64,9 @@ void EventHandler::ProcessEvent(void *item) {
     } else if (event->type == EVENT_VFS_UNLINK) {
         _translator.ProcessUnlink(event);
         counter.event_vfs_unlink++;
+    } else if (event->type == EVENT_VFS_FADVISE) {
+        _translator.ProcessFadvise(event);
+        counter.event_vfs_fadvise++;
     } else if (event->type == EVENT_CLEANCACHE_REPL) {
         counter.event_cleancache_repl++;
     } else {

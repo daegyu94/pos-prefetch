@@ -1,4 +1,0 @@
-/home/daegyu/prefetch-cache/ebpf-tracer/initiator-cpp/build/CMakeFiles/rebuild_cache.dir
-/home/daegyu/prefetch-cache/ebpf-tracer/initiator-cpp/build/CMakeFiles/proto_compile.dir
-/home/daegyu/prefetch-cache/ebpf-tracer/initiator-cpp/build/CMakeFiles/edit_cache.dir
-/home/daegyu/prefetch-cache/ebpf-tracer/initiator-cpp/build/CMakeFiles/pos_prefetch.out.dir

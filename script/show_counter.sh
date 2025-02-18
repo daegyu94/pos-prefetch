@@ -1,6 +1,3 @@
 #!/bin/bash 
 
-while [ 1 ]; 
-do 
-  cat ../initiator/counter.log; sleep 3; 
-done
+watch -n 1 "cat /var/log/ebpf_counter.log"

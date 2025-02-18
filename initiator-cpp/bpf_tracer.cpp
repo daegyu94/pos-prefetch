@@ -6,6 +6,7 @@
 #include "bpf_tracer.h"
 #include "metadata.h"
 #include "stat.h"
+#include "config.h"
 
 #define DMFP_BPF_INFO
 #ifdef DMFP_BPF_INFO
@@ -97,6 +98,7 @@ enum event_type {
     EVENT_PAGE_REFERENCED,
     EVENT_EXT4_MPAGE_READPAGES,
     EVENT_VFS_UNLINK,
+    EVENT_VFS_FADVISE,
 };
 
 enum filepath_type {
@@ -271,8 +273,10 @@ struct page_event_info {
     u64 ino;
     u64 index;
     u64 file_size;
-    u32 readahead_bitmap;
+    u32 bitmap;
     u16 readahead_size;
+    uint64_t len;
+    int advice;
 };
 
 BPF_PERF_OUTPUT(page_access_events);
@@ -374,7 +378,7 @@ int trace_ext4_mpage_readpages(struct pt_regs *ctx, struct address_space *mappin
             page = fblktrace_container_of(pages, struct page, lru);
         }
 
-        info.readahead_bitmap |= (1U << i);
+        info.bitmap |= (1U << i);
         info.readahead_size++;
     }
 
@@ -399,6 +403,41 @@ int trace_vfs_unlink(struct pt_regs *ctx, struct inode *dir,
     info.type = EVENT_VFS_UNLINK;
     info.dev_id = dev_id;
     info.ino = dentry->d_inode->i_ino;
+
+    page_access_events.perf_submit(ctx, &info, sizeof(info));
+    
+    return 0;
+}
+)";
+
+const std::string bpf_generic_fadvise = R"(
+#include <uapi/linux/fadvise.h>
+
+int trace_generic_fadvise(struct pt_regs *ctx, struct file *file, loff_t offset, 
+    loff_t len, int advice)
+{
+    u32 dev_id = file->f_inode->i_sb->s_dev;
+    u8 *ret;
+    struct page_event_info info = {};
+    struct inode *inode = file->f_inode;
+
+    if (advice == POSIX_FADV_NORMAL) {
+        return 0;
+    }
+
+    ret = mnt_map.lookup(&dev_id);
+    if (!ret) {
+        return -1;
+    }
+    
+    info.type = EVENT_VFS_FADVISE;
+    info.dev_id = dev_id;
+    info.file_size = inode->i_size;
+    info.ino = inode->i_ino;
+
+    info.index = offset >> PAGE_SHIFT;
+    info.len = len > 0 ? len : info.file_size;
+    info.advice = advice;
 
     page_access_events.perf_submit(ctx, &info, sizeof(info));
     
@@ -471,9 +510,10 @@ void BPFTracer::HandlePageAccessEvents(void *cb_cookie, void *data, int data_siz
     memcpy(event, ev, sizeof(BPFEvent));
     
     dmfp_bpf_debug("dev_id=%u, ino=%lu, index=%lu, file_size=%lu, "
-            "readahead_bitmap=%u, readahead_size=%u, type=%u\n", 
+            "bitmap=%u, readahead_size=%u, len=%lu, advice=%d, type=%u\n", 
             event->dev_id, event->ino, event->index, event->file_size, 
-            event->readahead_bitmap, event->readahead_size, event->type);
+            event->bitmap, event->readahead_size, 
+            event->len, event->advice, event->type);
  
     _event_queue->Enqueue((void *) event);
     br_end_ts(all, BR_EH_ENQ);
@@ -495,6 +535,9 @@ BPFTracer::BPFTracer() {
     std::string BPF_PROGRAM = bpf_open_close + \
                               bpf_page_deletion + \
                               bpf_vfs_unlink;
+    if (config.trace_fadvise) {
+        BPF_PROGRAM += bpf_generic_fadvise;
+    }
     /*
     std::string BPF_PROGRAM = bpf_open_close + \
                               bpf_page_deletion + \
@@ -574,6 +617,15 @@ BPFTracer::BPFTracer() {
     if (!attach_res.ok()) {
         std::cerr << attach_res.msg() << std::endl;
         return;
+    }
+    
+    if (config.trace_fadvise) {
+        attach_res = _bpf.attach_kprobe("generic_fadvise", 
+                "trace_generic_fadvise", 0, BPF_PROBE_ENTRY, 0);
+        if (!attach_res.ok()) {
+            std::cerr << attach_res.msg() << std::endl;
+            return;
+        }
     }
 
     /* TODO: lost_cb, nullptr, page_cnt */
